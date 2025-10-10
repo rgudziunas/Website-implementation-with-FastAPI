@@ -20,7 +20,7 @@ def get_db():
 
 DBSession = Annotated[Session, Depends(get_db)]
 
-# doctors.py – changed parts
+
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List, Annotated
 import models
@@ -31,7 +31,7 @@ class DoctorBase(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     active: Optional[bool] = True
-    role: models.DoctorRole = models.DoctorRole.main   # NEW
+    role: models.DoctorRole = models.DoctorRole.main  
 
 class DoctorCreate(DoctorBase):
     pass
@@ -42,7 +42,7 @@ class DoctorUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     active: Optional[bool] = None
-    role: Optional[models.DoctorRole] = None           # NEW
+    role: Optional[models.DoctorRole] = None          
 
 class DoctorOut(DoctorBase):
     id: int
@@ -57,7 +57,6 @@ class AppointmentBrief(BaseModel):
     status: models.AppointmentStatus
     model_config = ConfigDict(from_attributes=True)
 
-# ---- CRUD (5) ----
 @router.get("", response_model=List[DoctorOut], status_code=status.HTTP_200_OK)
 def list_doctors(db: DBSession):
     return db.query(models.Doctor).order_by(models.Doctor.full_name.asc()).all()
@@ -108,10 +107,9 @@ def delete_doctor(doctor_id: int, db: DBSession):
     db.commit()
     return
 
-# ---- Hierarchical: all appointments for a given doctor ----
+
 @router.get("/{doctor_id}/appointments", response_model=List[AppointmentBrief])
 def list_doctor_appointments(doctor_id: int, db: DBSession):
-    # ensure doctor
     if not db.query(models.Doctor.id).filter(models.Doctor.id == doctor_id).first():
         raise HTTPException(404, "Doctor not found")
 
@@ -125,7 +123,6 @@ def list_doctor_appointments(doctor_id: int, db: DBSession):
     return appts
 
 
-# Add this schema at the top with other schemas
 class ServiceBrief(BaseModel):
     id: int
     name: str
@@ -133,16 +130,13 @@ class ServiceBrief(BaseModel):
     price: float
     model_config = ConfigDict(from_attributes=True)
 
-# Add this endpoint after the list_doctor_appointments endpoint
 @router.get("/{doctor_id}/services", response_model=List[ServiceBrief], status_code=status.HTTP_200_OK)
 def list_doctor_services(doctor_id: int, db: DBSession):
     """Get all services that a doctor can perform"""
-    # ensure doctor exists
     doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
     if not doctor:
         raise HTTPException(404, "Doctor not found")
     
-    # get services through the many-to-many relationship
     services = (
         db.query(models.Service)
         .join(models.DoctorService, models.DoctorService.service_id == models.Service.id)

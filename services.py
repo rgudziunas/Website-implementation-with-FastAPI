@@ -40,7 +40,6 @@ class ServiceOut(ServiceBase):
 class LinkDoctorIn(BaseModel):
     doctor_id: int    
 
-# ---- CRUD (5) ----
 @router.get("", response_model=List[ServiceOut], status_code=status.HTTP_200_OK)
 def list_services(db: DBSession):
     return db.query(models.Service).order_by(models.Service.name.asc()).all()
@@ -94,8 +93,6 @@ def delete_service(service_id: int, db: DBSession):
     return
 
 
-
-# services.py – OPTIONAL helpers to manage doctor<->service links
 
 class LinkDoctorIn(BaseModel):
     doctor_id: int

@@ -11,7 +11,6 @@ from database import SessionLocal
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
-# ---- DB dependency ----
 def get_db():
     db = SessionLocal()
     try:
@@ -21,7 +20,7 @@ def get_db():
 
 DBSession = Annotated[Session, Depends(get_db)]
 
-# ---- Schemas ----
+
 class AppointmentBase(BaseModel):
     patient_id: int
     start_at: datetime
@@ -48,7 +47,7 @@ class AppointmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class AssignDoctorIn(BaseModel):
-    doctor_id: int  # no role here anymore (doctor has its own role)
+    doctor_id: int  
 
 class AppointmentDoctorOut(BaseModel):
     id: int
@@ -67,7 +66,7 @@ class AppointmentDoctorServiceOut(BaseModel):
     quantity: int
     model_config = ConfigDict(from_attributes=True)
 
-# ---- Helpers ----
+
 def _validate_times(start_at: datetime, end_at: datetime):
     if start_at >= end_at:
         raise HTTPException(status_code=422, detail="start_at must be before end_at")
@@ -90,7 +89,7 @@ def _ensure_service(service_id: int, db: Session):
     if not db.query(models.Service.id).filter(models.Service.id == service_id).first():
         raise HTTPException(status_code=404, detail="Service not found")
 
-# ---- CRUD (5) ----
+
 
 @router.get("", response_model=List[AppointmentOut], status_code=status.HTTP_200_OK)
 def list_appointments(db: DBSession):
@@ -127,12 +126,11 @@ def update_appointment(appointment_id: int, payload: AppointmentUpdate, db: DBSe
 
     data = payload.dict(exclude_unset=True)
 
-    # validate patient change
+
     if "patient_id" in data:
         _ensure_patient(data["patient_id"], db)
         appt.patient_id = data["patient_id"]
 
-    # validate times
     new_start = data.get("start_at", appt.start_at)
     new_end = data.get("end_at", appt.end_at)
     _validate_times(new_start, new_end)
@@ -156,7 +154,6 @@ def delete_appointment(appointment_id: int, db: DBSession):
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-# ---- Hierarchical: Doctors in an appointment ----
 
 @router.get(
     "/{appointment_id}/doctors",
@@ -170,7 +167,6 @@ def list_appointment_doctors(appointment_id: int, db: DBSession):
         .filter(models.AppointmentDoctor.appointment_id == appointment_id)
         .all()
     )
-    # enrich with doctor name (optional)
     result: List[AppointmentDoctorOut] = []
     for r in rows:
         result.append(
@@ -235,7 +231,6 @@ def add_service_for_appointment_doctor(appointment_id: int, doctor_id: int,
     db.refresh(row)
     return row
 """
-# Add this schema at the top with other schemas
 class ServicePerformedOut(BaseModel):
     id: int
     service_id: int
@@ -245,14 +240,12 @@ class ServicePerformedOut(BaseModel):
     quantity: int
     model_config = ConfigDict(from_attributes=True)
 
-# Add this endpoint after your other appointment endpoints
 @router.get("/{appointment_id}/services", response_model=List[ServicePerformedOut], status_code=status.HTTP_200_OK)
 def list_appointment_services(appointment_id: int, db: DBSession):
     """Get all services that will be/were performed during this appointment"""
-    # ensure appointment exists
     _ensure_appointment(appointment_id, db)
     
-    # get all services through appointment_doctor_services
+
     results = (
         db.query(
             models.AppointmentDoctorService.id,
@@ -270,7 +263,6 @@ def list_appointment_services(appointment_id: int, db: DBSession):
         .all()
     )
     
-    # convert to list of dicts for response
     return [
         ServicePerformedOut(
             id=r.id,

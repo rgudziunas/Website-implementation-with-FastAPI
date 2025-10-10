@@ -1,4 +1,3 @@
-# models.py
 from datetime import datetime
 from enum import Enum
 from sqlalchemy import (
@@ -9,7 +8,6 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from database import Base
 
-# ---------- Enums ----------
 class AppointmentStatus(str, Enum):
     pending = "pending"
     approved = "approved"
@@ -21,7 +19,6 @@ class DoctorRole(str, Enum):
     main = "main"
     assistant = "assistant"
 
-# ---------- Admins ----------
 class Admin(Base):
     __tablename__ = "admins"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -29,7 +26,6 @@ class Admin(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-# ---------- Patients ----------
 class Patient(Base):
     __tablename__ = "patients"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -45,7 +41,6 @@ class Patient(Base):
         "Appointment", back_populates="patient", cascade="all, delete-orphan"
     )
 
-# ---------- Doctors ----------
 class Doctor(Base):
     __tablename__ = "doctors"
 
@@ -58,12 +53,10 @@ class Doctor(Base):
     role: Mapped[DoctorRole] = mapped_column(SqlEnum(DoctorRole), nullable=False, default=DoctorRole.main)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # link to appointments (unchanged)
     appointments: Mapped[list["AppointmentDoctor"]] = relationship(
         "AppointmentDoctor", back_populates="doctor", cascade="all, delete-orphan"
     )
 
-    # NEW: many-to-many to services via DoctorService
     service_links: Mapped[list["DoctorService"]] = relationship(
         "DoctorService", back_populates="doctor", cascade="all, delete-orphan"
     )
@@ -72,7 +65,6 @@ class Doctor(Base):
         overlaps="service_links"
     )
 
-# ---------- Appointments ----------
 class Appointment(Base):
     __tablename__ = "appointments"
 
@@ -91,7 +83,6 @@ class Appointment(Base):
 
     __table_args__ = (Index("idx_appt_patient_time", "patient_id", "start_at"),)
 
-# ---------- Services ----------
 class Service(Base):
     __tablename__ = "services"
 
@@ -105,7 +96,6 @@ class Service(Base):
         "AppointmentDoctorService", back_populates="service", cascade="all, delete-orphan"
     )
 
-    # NEW: backref for doctor m:n
     doctor_links: Mapped[list["DoctorService"]] = relationship(
         "DoctorService", back_populates="service", cascade="all, delete-orphan"
     )
@@ -114,7 +104,6 @@ class Service(Base):
         overlaps="service_links"
     )
 
-# ---------- Join: many doctors per appointment ----------
 class AppointmentDoctor(Base):
     __tablename__ = "appointment_doctors"
 
@@ -132,7 +121,7 @@ class AppointmentDoctor(Base):
 
     __table_args__ = (UniqueConstraint("appointment_id", "doctor_id", name="uq_appt_doctor"),)
 
-# ---------- NEW: Doctor <-> Service (M:N) ----------
+
 class DoctorService(Base):
     __tablename__ = "doctor_services"
 
@@ -146,9 +135,9 @@ class DoctorService(Base):
 
     __table_args__ = (
         UniqueConstraint("doctor_id", "service_id", name="uq_doctor_service"),
-    )  # Note the trailing comma to make it a tuple
+    ) 
 
-# ---------- What a doctor did during an appointment ----------
+
 class AppointmentDoctorService(Base):
     __tablename__ = "appointment_doctor_services"
 
