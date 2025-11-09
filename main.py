@@ -8,6 +8,7 @@ from patient import router as patients_router
 from appointment import router as appointments_router 
 from doctors import router as doctors_router
 from services import router as services_router
+from auth_routes import router as auth_router
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
@@ -25,7 +26,7 @@ def get_db():
 
 DBSession = Annotated[Session, Depends(get_db)]
 
-
+app.include_router(auth_router)
 app.include_router(patients_router)
 app.include_router(appointments_router)
 app.include_router(doctors_router)

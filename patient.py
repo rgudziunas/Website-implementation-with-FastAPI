@@ -1,10 +1,11 @@
-
+#patient.py
 from datetime import datetime
 from typing import Optional, List, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from sqlalchemy.orm import Session
+from auth import hash_password
 
 import models
 from database import SessionLocal
@@ -22,11 +23,6 @@ def get_db():
 DBSession = Annotated[Session, Depends(get_db)]
 
 
-def hash_password(raw: str) -> str:
-    # TODO: 
-    return raw
-
-
 class PatientBase(BaseModel):
     full_name: str
     email: EmailStr
@@ -36,6 +32,22 @@ class PatientBase(BaseModel):
 class PatientCreate(PatientBase):
     username: str
     password: str
+    
+    @field_validator('password')
+    @classmethod
+    def password_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('Password cannot be empty')
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        return v
+    
+    @field_validator('username')
+    @classmethod
+    def username_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('Username cannot be empty')
+        return v
 
 class PatientUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -44,6 +56,15 @@ class PatientUpdate(BaseModel):
     birth_date: Optional[str] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    
+    @field_validator('password')
+    @classmethod
+    def password_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and (not v or not v.strip()):
+            raise ValueError('Password cannot be empty if provided')
+        if v is not None and len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        return v
 
 class PatientOut(PatientBase):
     id: int
@@ -57,8 +78,6 @@ class AppointmentOut(BaseModel):
     status: models.AppointmentStatus
     notes: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
-
-
 
 
 @router.get("", response_model=List[PatientOut], status_code=status.HTTP_200_OK)
