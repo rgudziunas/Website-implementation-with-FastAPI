@@ -173,35 +173,11 @@ def list_appointment_doctors(appointment_id: int, db: DBSession):
             AppointmentDoctorOut(
                 id=r.id,
                 doctor_id=r.doctor_id,
-                role=r.role,
+                # role=r.role,  ← DELETE THIS LINE!
                 doctor_name=r.doctor.full_name if r.doctor else None,
             )
         )
     return result
-"""
-@router.post("/{appointment_id}/doctors", response_model=AppointmentDoctorOut, status_code=status.HTTP_201_CREATED)
-def assign_doctor_to_appointment(appointment_id: int, payload: AssignDoctorIn, db: DBSession):
-    _ensure_appointment(appointment_id, db)
-    _ensure_doctor(payload.doctor_id, db)
-
-    exists = (
-        db.query(models.AppointmentDoctor.id)
-        .filter(models.AppointmentDoctor.appointment_id == appointment_id,
-                models.AppointmentDoctor.doctor_id == payload.doctor_id)
-        .first()
-    )
-    if exists:
-        raise HTTPException(status_code=422, detail="Doctor already assigned to this appointment")
-
-    row = models.AppointmentDoctor(
-        appointment_id=appointment_id,
-        doctor_id=payload.doctor_id,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return AppointmentDoctorOut(id=row.id, doctor_id=row.doctor_id,
-                                doctor_name=row.doctor.full_name if row.doctor else None)
 
 @router.post("/{appointment_id}/doctors/{doctor_id}/services",
              response_model=AppointmentDoctorServiceOut,
@@ -230,7 +206,34 @@ def add_service_for_appointment_doctor(appointment_id: int, doctor_id: int,
     db.commit()
     db.refresh(row)
     return row
-"""
+
+@router.post("/{appointment_id}/doctors", response_model=AppointmentDoctorOut, status_code=status.HTTP_201_CREATED)
+def assign_doctor_to_appointment(appointment_id: int, payload: AssignDoctorIn, db: DBSession):
+    _ensure_appointment(appointment_id, db)
+    _ensure_doctor(payload.doctor_id, db)
+
+    exists = (
+        db.query(models.AppointmentDoctor.id)
+        .filter(models.AppointmentDoctor.appointment_id == appointment_id,
+                models.AppointmentDoctor.doctor_id == payload.doctor_id)
+        .first()
+    )
+    if exists:
+        raise HTTPException(status_code=422, detail="Doctor already assigned to this appointment")
+
+    row = models.AppointmentDoctor(
+        appointment_id=appointment_id,
+        doctor_id=payload.doctor_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return AppointmentDoctorOut(
+        id=row.id, 
+        doctor_id=row.doctor_id,
+        doctor_name=row.doctor.full_name if row.doctor else None
+    )
+
 class ServicePerformedOut(BaseModel):
     id: int
     service_id: int
@@ -274,3 +277,49 @@ def list_appointment_services(appointment_id: int, db: DBSession):
         )
         for r in results
     ]
+
+
+class AssignMultipleDoctorsIn(BaseModel):
+    doctors: List[int]  # List of doctor IDs
+
+@router.post("/{appointment_id}/doctors/bulk", status_code=status.HTTP_201_CREATED)
+def assign_multiple_doctors_to_appointment(
+    appointment_id: int, 
+    payload: AssignMultipleDoctorsIn, 
+    db: DBSession
+):
+    """Assign multiple doctors to an appointment at once"""
+    _ensure_appointment(appointment_id, db)
+    
+    if not payload.doctors or len(payload.doctors) == 0:
+        raise HTTPException(status_code=422, detail="At least one doctor must be provided")
+    
+    # Verify all doctors exist
+    for doctor_id in payload.doctors:
+        _ensure_doctor(doctor_id, db)
+    
+    # Check if any doctors are already assigned
+    existing = db.query(models.AppointmentDoctor).filter(
+        models.AppointmentDoctor.appointment_id == appointment_id
+    ).all()
+    
+    existing_doctor_ids = [ad.doctor_id for ad in existing]
+    
+    # Add only new doctors
+    added_doctors = []
+    for doctor_id in payload.doctors:
+        if doctor_id not in existing_doctor_ids:
+            row = models.AppointmentDoctor(
+                appointment_id=appointment_id,
+                doctor_id=doctor_id,
+            )
+            db.add(row)
+            added_doctors.append(doctor_id)
+    
+    db.commit()
+    
+    return {
+        "message": f"Assigned {len(added_doctors)} doctor(s) to appointment",
+        "added_doctors": added_doctors,
+        "total_doctors": len(existing_doctor_ids) + len(added_doctors)
+    }

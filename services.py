@@ -131,3 +131,69 @@ def unlink_doctor_from_service(service_id: int, doctor_id: int, db: DBSession):
     db.commit()
     return
 """
+
+class ServiceWithAssistantInfo(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    price: float
+    requires_assistant: bool  # New field
+    model_config = ConfigDict(from_attributes=True)
+
+@router.get("/with-assistant-info", response_model=List[ServiceWithAssistantInfo], status_code=status.HTTP_200_OK)
+def list_services_with_assistant_info(db: DBSession):
+    """Get all services with information about whether they need an assistant"""
+    services = db.query(models.Service).order_by(models.Service.name.asc()).all()
+    
+    # Define which services require an assistant
+    # You can make this more dynamic by adding a column to the Service table
+    assistant_required_keywords = ["chirurgij", "ekstrakcij", "operacij"]
+    
+    result = []
+    for service in services:
+        requires_assistant = any(keyword in service.name.lower() for keyword in assistant_required_keywords)
+        result.append(
+            ServiceWithAssistantInfo(
+                id=service.id,
+                name=service.name,
+                description=service.description,
+                price=service.price,
+                requires_assistant=requires_assistant
+            )
+        )
+    
+    return result
+
+# Add this schema at the top with other schemas
+class DoctorOut(BaseModel):
+    id: int
+    full_name: str
+    specialization: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    active: bool
+    role: models.DoctorRole
+    model_config = ConfigDict(from_attributes=True)
+
+@router.get("/{service_id}/doctors", response_model=List[DoctorOut], status_code=status.HTTP_200_OK)
+def get_doctors_for_service(service_id: int, db: DBSession):
+    """Get all doctors who can perform this service"""
+    service = db.query(models.Service).filter(models.Service.id == service_id).first()
+    if not service:
+        raise HTTPException(404, "Service not found")
+    
+    # Get doctors linked to this service, only active main doctors
+    doctors = (
+        db.query(models.Doctor)
+        .join(models.DoctorService, models.DoctorService.doctor_id == models.Doctor.id)
+        .filter(
+            models.DoctorService.service_id == service_id,
+            models.Doctor.active == True,
+            models.Doctor.role == models.DoctorRole.main
+        )
+        .order_by(models.Doctor.full_name.asc())
+        .all()
+    )
+    return doctors
+
+
