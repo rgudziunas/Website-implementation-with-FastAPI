@@ -9,8 +9,19 @@ from appointment import router as appointments_router
 from doctors import router as doctors_router
 from services import router as services_router
 from auth_routes import router as auth_router
-
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 models.Base.metadata.create_all(bind=engine)
 
 @app.get("/")

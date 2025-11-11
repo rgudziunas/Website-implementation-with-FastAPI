@@ -145,3 +145,49 @@ def list_doctor_services(doctor_id: int, db: DBSession):
         .all()
     )
     return services
+
+
+# Add to doctors.py
+
+class LinkServiceIn(BaseModel):
+    service_id: int
+
+@router.post("/{doctor_id}/services/link", status_code=status.HTTP_201_CREATED)
+def link_service_to_doctor(doctor_id: int, payload: LinkServiceIn, db: DBSession):
+    """Link a service to a doctor"""
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(404, "Doctor not found")
+    
+    service = db.query(models.Service).filter(models.Service.id == payload.service_id).first()
+    if not service:
+        raise HTTPException(404, "Service not found")
+    
+    # Check if link already exists
+    exists = db.query(models.DoctorService).filter(
+        models.DoctorService.doctor_id == doctor_id,
+        models.DoctorService.service_id == payload.service_id
+    ).first()
+    
+    if exists:
+        raise HTTPException(422, "Service already linked to this doctor")
+    
+    link = models.DoctorService(doctor_id=doctor_id, service_id=payload.service_id)
+    db.add(link)
+    db.commit()
+    return {"message": "Service linked successfully"}
+
+@router.delete("/{doctor_id}/services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_service_from_doctor(doctor_id: int, service_id: int, db: DBSession):
+    """Unlink a service from a doctor"""
+    link = db.query(models.DoctorService).filter(
+        models.DoctorService.doctor_id == doctor_id,
+        models.DoctorService.service_id == service_id
+    ).first()
+    
+    if not link:
+        raise HTTPException(404, "Service link not found")
+    
+    db.delete(link)
+    db.commit()
+    return

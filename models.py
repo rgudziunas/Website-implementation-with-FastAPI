@@ -27,6 +27,11 @@ class Admin(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        "RefreshToken", back_populates="admin", cascade="all, delete-orphan",
+        foreign_keys="RefreshToken.admin_id"
+    )
+
 class Patient(Base):
     __tablename__ = "patients"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -40,6 +45,36 @@ class Patient(Base):
 
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="patient", cascade="all, delete-orphan"
+    )
+    
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        "RefreshToken", back_populates="patient", cascade="all, delete-orphan",
+        foreign_keys="RefreshToken.patient_id"
+    )
+
+class RefreshToken(Base):
+    """Store refresh tokens for authentication"""
+    __tablename__ = "refresh_tokens"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token: Mapped[str] = mapped_column(String(500), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_role: Mapped[str] = mapped_column(String(20), nullable=False)  # 'admin' or 'patient'
+    
+    # Optional foreign keys for referential integrity
+    admin_id: Mapped[int | None] = mapped_column(ForeignKey("admins.id", ondelete="CASCADE"))
+    patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"))
+    
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # Relationships
+    admin: Mapped["Admin"] = relationship("Admin", back_populates="refresh_tokens", foreign_keys=[admin_id])
+    patient: Mapped["Patient"] = relationship("Patient", back_populates="refresh_tokens", foreign_keys=[patient_id])
+    
+    __table_args__ = (
+        Index("idx_token_user", "token", "user_id", "user_role"),
     )
 
 class Doctor(Base):
@@ -59,11 +94,12 @@ class Doctor(Base):
     )
 
     service_links: Mapped[list["DoctorService"]] = relationship(
-        "DoctorService", back_populates="doctor", cascade="all, delete-orphan"
+        "DoctorService", back_populates="doctor", cascade="all, delete-orphan",
+        overlaps="services"
     )
     services: Mapped[list["Service"]] = relationship(
         "Service", secondary="doctor_services", back_populates="doctors",
-        overlaps="service_links"
+        overlaps="service_links,doctor_links"
     )
 
 class Appointment(Base):
@@ -98,11 +134,12 @@ class Service(Base):
     )
 
     doctor_links: Mapped[list["DoctorService"]] = relationship(
-        "DoctorService", back_populates="service", cascade="all, delete-orphan"
+        "DoctorService", back_populates="service", cascade="all, delete-orphan",
+        overlaps="services"
     )
     doctors: Mapped[list["Doctor"]] = relationship(
         "Doctor", secondary="doctor_services", back_populates="services",
-        overlaps="service_links"
+        overlaps="service_links,doctor_links"
     )
 
 class AppointmentDoctor(Base):
