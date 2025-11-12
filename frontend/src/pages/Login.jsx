@@ -1,26 +1,50 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FaSignInAlt } from 'react-icons/fa';
+import { FaSignInAlt, FaExclamationCircle } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
     setIsLoading(true);
+    setError('');
 
+    console.log('=== LOGIN ATTEMPT START ===');
+    
     try {
-      await login(username, password);
+      console.log('Calling login with:', username);
+      const result = await login(username, password);
+      console.log('Login result:', result);
+      console.log('=== LOGIN SUCCESS ===');
       navigate('/dashboard');
     } catch (error) {
-      console.error('Login failed:', error);
+      console.log('=== LOGIN FAILED ===');
+      console.log('Error caught:', error);
+      
+      let errorMessage = 'Invalid username or password';
+      
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      console.log('Final error message:', errorMessage);
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
+      console.log('=== LOGIN ATTEMPT END ===');
     }
   };
 
@@ -37,6 +61,16 @@ const Login = () => {
             <p className="mt-2 text-gray-600">Sign in to your account</p>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg flex items-start">
+              <FaExclamationCircle className="text-red-600 text-xl mt-0.5 mr-3 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm text-red-800 font-medium">{error}</p>
+              </div>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Username */}
@@ -47,11 +81,12 @@ const Login = () => {
               <input
                 id="username"
                 type="text"
-                required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="input"
                 placeholder="Enter your username"
+                autoComplete="username"
+                required
               />
             </div>
 
@@ -63,22 +98,26 @@ const Login = () => {
               <input
                 id="password"
                 type="password"
-                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input"
                 placeholder="Enter your password"
+                autoComplete="current-password"
+                required
               />
             </div>
 
-            {/* Submit Button */}
+            {/* Submit Button - NO onClick handler! */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full btn btn-primary flex items-center justify-center space-x-2"
+              className="w-full btn btn-primary flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                  <span>Signing in...</span>
+                </>
               ) : (
                 <>
                   <FaSignInAlt />

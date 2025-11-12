@@ -37,9 +37,13 @@ api.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token');
         
         if (!refreshToken) {
-          throw new Error('No refresh token');
+          console.log('No refresh token available');
+          // Don't redirect here - just reject the error
+          return Promise.reject(error);
         }
 
+        console.log('Attempting to refresh token...');
+        
         // Refresh the access token
         const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
           refresh_token: refreshToken,
@@ -48,15 +52,25 @@ api.interceptors.response.use(
         const { access_token } = response.data;
         localStorage.setItem('access_token', access_token);
 
+        console.log('Token refreshed successfully');
+
         // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, logout user
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role');
-        window.location.href = '/login';
+        console.log('Token refresh failed:', refreshError);
+        
+        // Only redirect to login if we're NOT already on the login page
+        // and NOT in the middle of a login request
+        if (!originalRequest.url.includes('/api/auth/login') && 
+            window.location.pathname !== '/login') {
+          // Refresh failed, logout user
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('user_role');
+          window.location.href = '/login';
+        }
+        
         return Promise.reject(refreshError);
       }
     }
