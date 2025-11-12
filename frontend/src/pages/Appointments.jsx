@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { FaCalendarAlt, FaClock, FaUserMd, FaCheckCircle, FaHourglassHalf, FaTimesCircle, FaBan, FaNotesMedical, FaEdit, FaSave, FaTimes } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaUserMd, FaCheckCircle, FaHourglassHalf, FaTimesCircle, FaBan, FaNotesMedical, FaEdit, FaSave, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import api from '../services/api';
 
 // AppointmentCard component with services and edit functionality
@@ -9,10 +9,11 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
   const [services, setServices] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [availabilityMessage, setAvailabilityMessage] = useState(null);
   const [editData, setEditData] = useState({
     date: '',
-    startTime: '',
-    endTime: '',
+    time: '',
   });
 
   useEffect(() => {
@@ -22,14 +23,19 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
   useEffect(() => {
     // Initialize edit data when appointment changes
     const startDate = new Date(appointment.start_at);
-    const endDate = new Date(appointment.end_at);
     
     setEditData({
       date: startDate.toISOString().split('T')[0],
-      startTime: startDate.toTimeString().slice(0, 5),
-      endTime: endDate.toTimeString().slice(0, 5),
+      time: startDate.toTimeString().slice(0, 5),
     });
   }, [appointment]);
+
+  // Check availability when date or time changes in edit mode
+  useEffect(() => {
+    if (isEditing && editData.date && editData.time) {
+      checkAvailability();
+    }
+  }, [editData.date, editData.time, isEditing]);
 
   const fetchDoctorsAndServices = async () => {
     try {
@@ -45,42 +51,159 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
     }
   };
 
+  const checkAvailability = async () => {
+    setCheckingAvailability(true);
+    setAvailabilityMessage(null);
+
+    try {
+      // Create UTC datetime directly from the input values
+      const dateTimeParts = editData.date.split('-'); // [YYYY, MM, DD]
+      const timeParts = editData.time.split(':'); // [HH, MM]
+      
+      const startDateTime = new Date(Date.UTC(
+        parseInt(dateTimeParts[0]), // year
+        parseInt(dateTimeParts[1]) - 1, // month (0-indexed)
+        parseInt(dateTimeParts[2]), // day
+        parseInt(timeParts[0]), // hours
+        parseInt(timeParts[1]), // minutes
+        0, // seconds
+        0 // milliseconds
+      ));
+      
+      const endDateTime = new Date(Date.UTC(
+        parseInt(dateTimeParts[0]), // year
+        parseInt(dateTimeParts[1]) - 1, // month (0-indexed)
+        parseInt(dateTimeParts[2]), // day
+        parseInt(timeParts[0]) + 1, // hours + 1
+        parseInt(timeParts[1]), // minutes
+        0, // seconds
+        0 // milliseconds
+      ));
+
+      console.log('Checking availability:', {
+        input_date: editData.date,
+        input_time: editData.time,
+        start: startDateTime.toISOString(),
+        end: endDateTime.toISOString()
+      });
+
+      // Get all doctor IDs from this appointment
+      const allDoctorIds = doctors.map(d => d.doctor_id);
+
+      for (const checkDoctorId of allDoctorIds) {
+        const doctorAppointmentsResponse = await api.get(`/api/doctors/${checkDoctorId}/appointments`);
+        const doctorAppointments = doctorAppointmentsResponse.data;
+
+        const doctorResponse = await api.get(`/api/doctors/${checkDoctorId}`);
+        const doctorName = doctorResponse.data.full_name;
+
+        for (const existingApt of doctorAppointments) {
+          if (existingApt.id === appointment.id || 
+              existingApt.status === 'canceled' || 
+              existingApt.status === 'rejected') {
+            continue;
+          }
+
+          const existingStart = new Date(existingApt.start_at);
+          const existingEnd = new Date(existingApt.end_at);
+
+          const hasOverlap = (
+            (startDateTime >= existingStart && startDateTime < existingEnd) ||
+            (endDateTime > existingStart && endDateTime <= existingEnd) ||
+            (startDateTime <= existingStart && endDateTime >= existingEnd)
+          );
+
+          if (hasOverlap) {
+            setAvailabilityMessage({
+              type: 'error',
+              text: `Dr. ${doctorName} is not available at this time.`,
+              doctor: doctorName
+            });
+            setCheckingAvailability(false);
+            return;
+          }
+        }
+      }
+
+      setAvailabilityMessage({
+        type: 'success',
+        text: 'All doctors are available at this time! ✓'
+      });
+
+    } catch (error) {
+      console.error('Error checking availability:', error);
+      setAvailabilityMessage({
+        type: 'error',
+        text: 'Failed to check availability. Please try again.'
+      });
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
+
   const handleEdit = () => {
     setIsEditing(true);
+    setAvailabilityMessage(null);
   };
 
   const handleCancelEdit = () => {
     // Reset to original values
     const startDate = new Date(appointment.start_at);
-    const endDate = new Date(appointment.end_at);
     
     setEditData({
       date: startDate.toISOString().split('T')[0],
-      startTime: startDate.toTimeString().slice(0, 5),
-      endTime: endDate.toTimeString().slice(0, 5),
+      time: startDate.toTimeString().slice(0, 5),
     });
     setIsEditing(false);
+    setAvailabilityMessage(null);
   };
 
   const handleSaveEdit = async () => {
-    try {
-      // Combine date and time into ISO strings
-      const startDateTime = new Date(`${editData.date}T${editData.startTime}`);
-      const endDateTime = new Date(`${editData.date}T${editData.endTime}`);
+    if (availabilityMessage?.type === 'error') {
+      alert('Cannot reschedule: ' + availabilityMessage.text);
+      return;
+    }
 
-      // Validate times
-      if (startDateTime >= endDateTime) {
-        alert('End time must be after start time');
-        return;
-      }
+    try {
+      // Create UTC datetime directly from the input values
+      const dateTimeParts = editData.date.split('-'); // [YYYY, MM, DD]
+      const timeParts = editData.time.split(':'); // [HH, MM]
+      
+      const startDateTime = new Date(Date.UTC(
+        parseInt(dateTimeParts[0]), // year
+        parseInt(dateTimeParts[1]) - 1, // month (0-indexed)
+        parseInt(dateTimeParts[2]), // day
+        parseInt(timeParts[0]), // hours
+        parseInt(timeParts[1]), // minutes
+        0, // seconds
+        0 // milliseconds
+      ));
+      
+      const endDateTime = new Date(Date.UTC(
+        parseInt(dateTimeParts[0]), // year
+        parseInt(dateTimeParts[1]) - 1, // month (0-indexed)
+        parseInt(dateTimeParts[2]), // day
+        parseInt(timeParts[0]) + 1, // hours + 1
+        parseInt(timeParts[1]), // minutes
+        0, // seconds
+        0 // milliseconds
+      ));
+
+      console.log('Saving:', {
+        input_date: editData.date,
+        input_time: editData.time,
+        start: startDateTime.toISOString(),
+        end: endDateTime.toISOString()
+      });
 
       await onUpdate(appointment.id, {
         start_at: startDateTime.toISOString(),
         end_at: endDateTime.toISOString(),
-        status: 'pending', // Reset to pending when rescheduled
+        status: 'pending',
       });
 
       setIsEditing(false);
+      setAvailabilityMessage(null);
     } catch (error) {
       console.error('Error updating appointment:', error);
       alert('Failed to update appointment');
@@ -126,6 +249,11 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
         {labels[status] || status}
       </span>
     );
+  };
+
+  const getMinDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
   };
 
   const canEdit = appointment.status === 'pending' || appointment.status === 'approved';
@@ -180,35 +308,66 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
                     value={editData.date}
                     onChange={(e) => setEditData({ ...editData, date: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getMinDate()}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">
-                      Start Time:
-                    </label>
-                    <input
-                      type="time"
-                      value={editData.startTime}
-                      onChange={(e) => setEditData({ ...editData, startTime: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">
-                      End Time:
-                    </label>
-                    <input
-                      type="time"
-                      value={editData.endTime}
-                      onChange={(e) => setEditData({ ...editData, endTime: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Time:
+                  </label>
+                  <select
+                    value={editData.time}
+                    onChange={(e) => setEditData({ ...editData, time: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="09:00">09:00 AM</option>
+                    <option value="09:30">09:30 AM</option>
+                    <option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option>
+                    <option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option>
+                    <option value="14:00">02:00 PM</option>
+                    <option value="14:30">02:30 PM</option>
+                    <option value="15:00">03:00 PM</option>
+                    <option value="15:30">03:30 PM</option>
+                    <option value="16:00">04:00 PM</option>
+                    <option value="16:30">04:30 PM</option>
+                  </select>
                 </div>
+
+                {/* Availability Check Message */}
+                {(checkingAvailability || availabilityMessage) && (
+                  <div
+                    className={`p-3 rounded-lg border ${
+                      checkingAvailability
+                        ? 'bg-blue-50 border-blue-200'
+                        : availabilityMessage.type === 'success'
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}
+                  >
+                    {checkingAvailability ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                        <span className="text-sm text-blue-700">Checking availability...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        {availabilityMessage.type === 'success' ? (
+                          <span className="text-sm text-green-700 font-medium">{availabilityMessage.text}</span>
+                        ) : (
+                          <div className="flex items-center">
+                            <FaExclamationTriangle className="text-red-600 mr-2" />
+                            <span className="text-sm text-red-700 font-medium">{availabilityMessage.text}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <p className="text-xs text-gray-600 italic">
-                  Note: Rescheduling will reset the appointment status to "Pending"
+                  Note: Rescheduling will reset the appointment status to "Pending". Appointment duration is 1 hour.
                 </p>
               </div>
             ) : (
@@ -274,7 +433,8 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
             <>
               <button
                 onClick={handleSaveEdit}
-                className="btn bg-green-600 hover:bg-green-700 text-white flex items-center justify-center space-x-1"
+                disabled={checkingAvailability || availabilityMessage?.type === 'error'}
+                className="btn bg-green-600 hover:bg-green-700 text-white flex items-center justify-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FaSave />
                 <span>Save</span>
@@ -314,6 +474,7 @@ const AppointmentCard = ({ appointment, index, onCancel, onUpdate }) => {
   );
 };
 
+// Main Appointments component
 const Appointments = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
