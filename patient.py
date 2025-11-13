@@ -5,7 +5,7 @@ from typing import Optional, List, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from sqlalchemy.orm import Session
-from auth import hash_password
+from auth import hash_password, get_current_admin, get_authenticated_user
 
 import models
 from database import SessionLocal
@@ -81,15 +81,33 @@ class AppointmentOut(BaseModel):
 
 
 @router.get("", response_model=List[PatientOut], status_code=status.HTTP_200_OK)
-def list_patients(db: DBSession):
+def list_patients(
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """List all patients - Admin only"""
     return db.query(models.Patient).order_by(models.Patient.id.asc()).all()
 
 
 @router.get("/{patient_id}", response_model=PatientOut, status_code=status.HTTP_200_OK)
-def get_patient(patient_id: int, db: DBSession):
+def get_patient(
+    patient_id: int,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Get patient - Patients can see their own profile, admins can see all"""
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # If patient, they can only see their own profile
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if patient.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access your own profile"
+            )
+
     return patient
 
 
@@ -114,10 +132,24 @@ def create_patient(payload: PatientCreate, db: DBSession):
     return patient
 
 @router.put("/{patient_id}", response_model=PatientOut, status_code=status.HTTP_200_OK)
-def update_patient(patient_id: int, payload: PatientUpdate, db: DBSession):
+def update_patient(
+    patient_id: int,
+    payload: PatientUpdate,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Update patient - Patients can update their own profile, admins can update all"""
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # If patient, they can only update their own profile
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if patient.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update your own profile"
+            )
 
     data = payload.dict(exclude_unset=True)
 
@@ -147,7 +179,12 @@ def update_patient(patient_id: int, payload: PatientUpdate, db: DBSession):
 
 
 @router.delete("/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_patient(patient_id: int, db: DBSession):
+def delete_patient(
+    patient_id: int,
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """Delete patient - Admin only"""
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -161,9 +198,23 @@ def delete_patient(patient_id: int, db: DBSession):
     response_model=List[AppointmentOut],
     status_code=status.HTTP_200_OK,
 )
-def list_patient_appointments(patient_id: int, db: DBSession):
+def list_patient_appointments(
+    patient_id: int,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Get patient appointments - Patients can see their own, admins can see all"""
     if not db.query(models.Patient.id).filter(models.Patient.id == patient_id).first():
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # If patient, they can only see their own appointments
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access your own appointments"
+            )
+
     appts = (
         db.query(models.Appointment)
         .filter(models.Appointment.patient_id == patient_id)

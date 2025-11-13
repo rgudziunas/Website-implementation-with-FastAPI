@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 import models
 from database import SessionLocal
+from auth import get_current_admin, get_current_patient, get_authenticated_user
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
@@ -92,7 +93,11 @@ def _ensure_service(service_id: int, db: Session):
 
 
 @router.get("", response_model=List[AppointmentOut], status_code=status.HTTP_200_OK)
-def list_appointments(db: DBSession):
+def list_appointments(
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """List all appointments - Admin only"""
     return (
         db.query(models.Appointment)
         .order_by(models.Appointment.start_at.asc())
@@ -100,13 +105,41 @@ def list_appointments(db: DBSession):
     )
 
 @router.get("/{appointment_id}", response_model=AppointmentOut, status_code=status.HTTP_200_OK)
-def get_appointment(appointment_id: int, db: DBSession):
-    return _ensure_appointment(appointment_id, db)
+def get_appointment(
+    appointment_id: int,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Get appointment - Patients can see their own, admins can see all"""
+    appt = _ensure_appointment(appointment_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access your own appointments"
+            )
+
+    return appt
 
 @router.post("", response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
-def create_appointment(payload: AppointmentCreate, db: DBSession):
+def create_appointment(
+    payload: AppointmentCreate,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Create appointment - Patients can create for themselves, admins can create for anyone"""
     _ensure_patient(payload.patient_id, db)
     _validate_times(payload.start_at, payload.end_at)
+
+    # If patient, they can only create for themselves
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if payload.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only create appointments for yourself"
+            )
 
     appt = models.Appointment(
         patient_id=payload.patient_id,
@@ -121,11 +154,24 @@ def create_appointment(payload: AppointmentCreate, db: DBSession):
     return appt
 
 @router.put("/{appointment_id}", response_model=AppointmentOut, status_code=status.HTTP_200_OK)
-def update_appointment(appointment_id: int, payload: AppointmentUpdate, db: DBSession):
+def update_appointment(
+    appointment_id: int,
+    payload: AppointmentUpdate,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Update appointment - Patients can update their own, admins can update all"""
     appt = _ensure_appointment(appointment_id, db)
 
-    data = payload.dict(exclude_unset=True)
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update your own appointments"
+            )
 
+    data = payload.dict(exclude_unset=True)
 
     if "patient_id" in data:
         _ensure_patient(data["patient_id"], db)
@@ -148,7 +194,12 @@ def update_appointment(appointment_id: int, payload: AppointmentUpdate, db: DBSe
     return appt
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_appointment(appointment_id: int, db: DBSession):
+def delete_appointment(
+    appointment_id: int,
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """Delete appointment - Admin only"""
     appt = _ensure_appointment(appointment_id, db)
     db.delete(appt)
     db.commit()
@@ -160,8 +211,22 @@ def delete_appointment(appointment_id: int, db: DBSession):
     response_model=List[AppointmentDoctorOut],
     status_code=status.HTTP_200_OK,
 )
-def list_appointment_doctors(appointment_id: int, db: DBSession):
-    _ensure_appointment(appointment_id, db)
+def list_appointment_doctors(
+    appointment_id: int,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Get doctors for appointment - Authenticated users only"""
+    appt = _ensure_appointment(appointment_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access your own appointments"
+            )
+
     rows = (
         db.query(models.AppointmentDoctor)
         .filter(models.AppointmentDoctor.appointment_id == appointment_id)
@@ -182,11 +247,25 @@ def list_appointment_doctors(appointment_id: int, db: DBSession):
 @router.post("/{appointment_id}/doctors/{doctor_id}/services",
              response_model=AppointmentDoctorServiceOut,
              status_code=status.HTTP_201_CREATED)
-def add_service_for_appointment_doctor(appointment_id: int, doctor_id: int,
-                                       payload: AddServiceIn, db: DBSession):
-    _ensure_appointment(appointment_id, db)
+def add_service_for_appointment_doctor(
+    appointment_id: int,
+    doctor_id: int,
+    payload: AddServiceIn,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Add service to appointment - Authenticated users only"""
+    appt = _ensure_appointment(appointment_id, db)
     _ensure_doctor(doctor_id, db)
     _ensure_service(payload.service_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only modify your own appointments"
+            )
 
     appt_doc = (
         db.query(models.AppointmentDoctor)
@@ -208,9 +287,23 @@ def add_service_for_appointment_doctor(appointment_id: int, doctor_id: int,
     return row
 
 @router.post("/{appointment_id}/doctors", response_model=AppointmentDoctorOut, status_code=status.HTTP_201_CREATED)
-def assign_doctor_to_appointment(appointment_id: int, payload: AssignDoctorIn, db: DBSession):
-    _ensure_appointment(appointment_id, db)
+def assign_doctor_to_appointment(
+    appointment_id: int,
+    payload: AssignDoctorIn,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Assign doctor to appointment - Authenticated users only"""
+    appt = _ensure_appointment(appointment_id, db)
     _ensure_doctor(payload.doctor_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only modify your own appointments"
+            )
 
     exists = (
         db.query(models.AppointmentDoctor.id)
@@ -229,7 +322,7 @@ def assign_doctor_to_appointment(appointment_id: int, payload: AssignDoctorIn, d
     db.commit()
     db.refresh(row)
     return AppointmentDoctorOut(
-        id=row.id, 
+        id=row.id,
         doctor_id=row.doctor_id,
         doctor_name=row.doctor.full_name if row.doctor else None
     )
@@ -244,10 +337,21 @@ class ServicePerformedOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 @router.get("/{appointment_id}/services", response_model=List[ServicePerformedOut], status_code=status.HTTP_200_OK)
-def list_appointment_services(appointment_id: int, db: DBSession):
-    """Get all services that will be/were performed during this appointment"""
-    _ensure_appointment(appointment_id, db)
-    
+def list_appointment_services(
+    appointment_id: int,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
+):
+    """Get all services for appointment - Authenticated users only"""
+    appt = _ensure_appointment(appointment_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access your own appointments"
+            )
 
     results = (
         db.query(
@@ -265,7 +369,7 @@ def list_appointment_services(appointment_id: int, db: DBSession):
         .order_by(models.Doctor.full_name.asc(), models.Service.name.asc())
         .all()
     )
-    
+
     return [
         ServicePerformedOut(
             id=r.id,
@@ -284,27 +388,36 @@ class AssignMultipleDoctorsIn(BaseModel):
 
 @router.post("/{appointment_id}/doctors/bulk", status_code=status.HTTP_201_CREATED)
 def assign_multiple_doctors_to_appointment(
-    appointment_id: int, 
-    payload: AssignMultipleDoctorsIn, 
-    db: DBSession
+    appointment_id: int,
+    payload: AssignMultipleDoctorsIn,
+    db: DBSession,
+    current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
 ):
-    """Assign multiple doctors to an appointment at once"""
-    _ensure_appointment(appointment_id, db)
-    
+    """Assign multiple doctors to appointment - Authenticated users only"""
+    appt = _ensure_appointment(appointment_id, db)
+
+    # If patient, check they own this appointment
+    if hasattr(current_user, 'role') and current_user.role == 'patient':
+        if appt.patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only modify your own appointments"
+            )
+
     if not payload.doctors or len(payload.doctors) == 0:
         raise HTTPException(status_code=422, detail="At least one doctor must be provided")
-    
+
     # Verify all doctors exist
     for doctor_id in payload.doctors:
         _ensure_doctor(doctor_id, db)
-    
+
     # Check if any doctors are already assigned
     existing = db.query(models.AppointmentDoctor).filter(
         models.AppointmentDoctor.appointment_id == appointment_id
     ).all()
-    
+
     existing_doctor_ids = [ad.doctor_id for ad in existing]
-    
+
     # Add only new doctors
     added_doctors = []
     for doctor_id in payload.doctors:
@@ -315,9 +428,9 @@ def assign_multiple_doctors_to_appointment(
             )
             db.add(row)
             added_doctors.append(doctor_id)
-    
+
     db.commit()
-    
+
     return {
         "message": f"Assigned {len(added_doctors)} doctor(s) to appointment",
         "added_doctors": added_doctors,

@@ -183,3 +183,12 @@ def get_current_patient(current_user: Annotated[models.Patient, Depends(get_curr
             detail="Patient access required"
         )
     return current_user
+
+def get_authenticated_user(current_user: Annotated[models.Admin | models.Patient, Depends(get_current_user)]):
+    """Accepts both admin and patient - any authenticated user"""
+    if not hasattr(current_user, 'role') or current_user.role not in ["admin", "patient"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authentication required"
+        )
+    return current_user
