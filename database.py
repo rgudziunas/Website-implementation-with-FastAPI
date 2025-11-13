@@ -3,17 +3,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
-# Get Railway's MYSQL_URL
+# Get the MySQL URL from environment
 URL_DATABASE = os.getenv("MYSQL_URL")
 
 if URL_DATABASE:
-    # Railway gives mysql://, but SQLAlchemy needs mysql+pymysql://
+    # Convert mysql:// to mysql+pymysql://
     URL_DATABASE = URL_DATABASE.replace("mysql://", "mysql+pymysql://")
     print("Connected to Railway MySQL")
 else:
-    # Fallback for local development
+    # Fallback - this will fail in production
     URL_DATABASE = 'mysql+pymysql://root:rokas@localhost:3306/saitynai'
-    print("Using localhost MySQL")
+    print("ERROR: MYSQL_URL not found in environment")
 
 engine = create_engine(URL_DATABASE, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
