@@ -1,18 +1,19 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.engine.url import URL
 
-# Create URL object to handle special characters properly
-url_object = URL.create(
-    "mysql+pymysql",
-    username="root",
-    password="kLFmcKOQaKdogRKnPvWfQENxkarAhzip",
-    host="crossover.proxy.rlwy.net",
-    port=34987,
-    database="railway"
-)
+# Get from environment variable (for production)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(url_object, pool_pre_ping=True)
+if not DATABASE_URL:
+    # For local development (you can update this with your actual Supabase URL for testing)
+    DATABASE_URL = 'postgresql://postgres:Rokas958@db.sgiebgscreirsoddijdc.supabase.co:5432/postgres'
+
+# Fix for Supabase (they give postgres:// but SQLAlchemy needs postgresql://)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
