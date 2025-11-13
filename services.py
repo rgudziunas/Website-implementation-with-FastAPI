@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 import models
 from database import SessionLocal
+from auth import get_current_admin
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -42,17 +43,24 @@ class LinkDoctorIn(BaseModel):
 
 @router.get("", response_model=List[ServiceOut], status_code=status.HTTP_200_OK)
 def list_services(db: DBSession):
+    """List all services - Public access"""
     return db.query(models.Service).order_by(models.Service.name.asc()).all()
 
 @router.get("/{service_id}", response_model=ServiceOut, status_code=status.HTTP_200_OK)
 def get_service(service_id: int, db: DBSession):
+    """Get service details - Public access"""
     service = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not service:
         raise HTTPException(404, "Service not found")
     return service
 
 @router.post("", response_model=ServiceOut, status_code=status.HTTP_201_CREATED)
-def create_service(payload: ServiceCreate, db: DBSession):
+def create_service(
+    payload: ServiceCreate,
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """Create service - Admin only"""
     if db.query(models.Service).filter(models.Service.name == payload.name).first():
         raise HTTPException(422, "Service with this name already exists")
     s = models.Service(**payload.dict())
@@ -62,7 +70,13 @@ def create_service(payload: ServiceCreate, db: DBSession):
     return s
 
 @router.put("/{service_id}", response_model=ServiceOut, status_code=status.HTTP_200_OK)
-def update_service(service_id: int, payload: ServiceUpdate, db: DBSession):
+def update_service(
+    service_id: int,
+    payload: ServiceUpdate,
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """Update service - Admin only"""
     s = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not s:
         raise HTTPException(404, "Service not found")
@@ -84,7 +98,12 @@ def update_service(service_id: int, payload: ServiceUpdate, db: DBSession):
     return s
 
 @router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_service(service_id: int, db: DBSession):
+def delete_service(
+    service_id: int,
+    db: DBSession,
+    current_admin: Annotated[models.Admin, Depends(get_current_admin)]
+):
+    """Delete service - Admin only"""
     s = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not s:
         raise HTTPException(404, "Service not found")
@@ -177,11 +196,11 @@ class DoctorOut(BaseModel):
 
 @router.get("/{service_id}/doctors", response_model=List[DoctorOut], status_code=status.HTTP_200_OK)
 def get_doctors_for_service(service_id: int, db: DBSession):
-    """Get all doctors who can perform this service"""
+    """Get all doctors who can perform this service - Public access"""
     service = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not service:
         raise HTTPException(404, "Service not found")
-    
+
     # Get doctors linked to this service, only active main doctors
     doctors = (
         db.query(models.Doctor)
