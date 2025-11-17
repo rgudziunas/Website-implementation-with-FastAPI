@@ -24,4 +24,4 @@ Appointments: Scheduled patient visits
 Services: Medical procedures/services
 AppointmentDoctor: Many-to-many relationship between appointments and doctors
 DoctorService: Many-to-many relationship between doctors and services
-AppointmentDoctorService: Services performed during appointments# Website-implementation-with-FastAPI
+AppointmentDoctorService: Services performed during appointments# Website-implementation-with-FastAPIc
