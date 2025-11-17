@@ -382,7 +382,11 @@ def list_appointment_services(
         for r in results
     ]
 
+class DoctorAssignment(BaseModel):
+    doctor_id: int
 
+class BulkDoctorAssignment(BaseModel):
+    doctors: List[DoctorAssignment]
 class AssignMultipleDoctorsIn(BaseModel):
     doctors: List[int]  # List of doctor IDs
 
