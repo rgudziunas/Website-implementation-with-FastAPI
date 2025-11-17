@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+// Use relative URLs in production, absolute URL in development
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === 'production' ? '' : 'http://127.0.0.1:8000');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -43,8 +45,8 @@ api.interceptors.response.use(
         }
 
         console.log('Attempting to refresh token...');
-        
-        // Refresh the access token
+
+        // Refresh the access token (use axios directly to avoid interceptor loop)
         const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
           refresh_token: refreshToken,
         });

@@ -12,6 +12,10 @@ build/
 develop-eggs/
 dist/
 downloads/
+
+# IMPORTANT: Don't ignore frontend build folder (needed for Azure deployment)
+!frontend/dist/
+!frontend/dist/**
 eggs/
 .eggs/
 lib/
