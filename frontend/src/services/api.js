@@ -1,8 +1,7 @@
 import axios from 'axios';
 
 // Use relative URLs in production, absolute URL in development
-const API_BASE_URL = import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === 'production' ? '' : 'http://127.0.0.1:8000');
+const API_BASE_URL = 'https://saitynai-f8asabbabpgwccc8.polandcentral-01.azurewebsites.net';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
