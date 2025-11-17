@@ -11,13 +11,11 @@ if not DATABASE_URL:
 
 print(f"✓ Connecting to database...")
 
-# Configure SSL for Azure MySQL
+# Configure SSL for Azure MySQL - PyMySQL format
 connect_args = {}
-if "azure" in DATABASE_URL or "azurewebsites" in DATABASE_URL:
+if "azure" in DATABASE_URL.lower():
     connect_args = {
-        "ssl": {
-            "ssl_mode": "REQUIRED"
-        }
+        "ssl": {"check_hostname": False}
     }
 
 # Create engine for MySQL
