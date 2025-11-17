@@ -11,11 +11,21 @@ if not DATABASE_URL:
 
 print(f"✓ Connecting to database...")
 
+# Configure SSL for Azure MySQL
+connect_args = {}
+if "azure" in DATABASE_URL or "azurewebsites" in DATABASE_URL:
+    connect_args = {
+        "ssl": {
+            "ssl_mode": "REQUIRED"
+        }
+    }
+
 # Create engine for MySQL
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=3600    # Recycle connections every hour
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_recycle=3600
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
