@@ -386,53 +386,54 @@ def list_appointment_services(
 class AssignMultipleDoctorsIn(BaseModel):
     doctors: List[int]  # List of doctor IDs
 
-@router.post("/{appointment_id}/doctors/bulk", status_code=status.HTTP_201_CREATED)
+@router.post("/{appointment_id}/doctors/bulk", status_code=status.HTTP_200_OK)
 def assign_multiple_doctors_to_appointment(
     appointment_id: int,
-    payload: AssignMultipleDoctorsIn,
+    payload: BulkDoctorAssignment,
     db: DBSession,
     current_user: Annotated[models.Admin | models.Patient, Depends(get_authenticated_user)]
 ):
-    """Assign multiple doctors to appointment - Authenticated users only"""
-    appt = _ensure_appointment(appointment_id, db)
-
-    # If patient, check they own this appointment
+    """Assign multiple doctors to an appointment"""
+    appointment = db.query(models.Appointment).filter(
+        models.Appointment.id == appointment_id
+    ).first()
+    
+    if not appointment:
+        raise HTTPException(404, "Appointment not found")
+    
+    # Authorization check
     if hasattr(current_user, 'role') and current_user.role == 'patient':
-        if appt.patient_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only modify your own appointments"
-            )
-
-    if not payload.doctors or len(payload.doctors) == 0:
-        raise HTTPException(status_code=422, detail="At least one doctor must be provided")
-
-    # Verify all doctors exist
-    for doctor_id in payload.doctors:
-        _ensure_doctor(doctor_id, db)
-
-    # Check if any doctors are already assigned
-    existing = db.query(models.AppointmentDoctor).filter(
-        models.AppointmentDoctor.appointment_id == appointment_id
-    ).all()
-
-    existing_doctor_ids = [ad.doctor_id for ad in existing]
-
-    # Add only new doctors
-    added_doctors = []
-    for doctor_id in payload.doctors:
-        if doctor_id not in existing_doctor_ids:
-            row = models.AppointmentDoctor(
-                appointment_id=appointment_id,
-                doctor_id=doctor_id,
-            )
-            db.add(row)
-            added_doctors.append(doctor_id)
-
+        if appointment.patient_id != current_user.id:
+            raise HTTPException(403, "You can only modify your own appointments")
+    
+    assigned_doctors = []
+    
+    for doctor_data in payload.doctors:
+        doctor_id = doctor_data.doctor_id
+        
+        # CHECK IF ALREADY ASSIGNED
+        existing = db.query(models.AppointmentDoctor).filter(
+            models.AppointmentDoctor.appointment_id == appointment_id,
+            models.AppointmentDoctor.doctor_id == doctor_id
+        ).first()
+        
+        if existing:
+            assigned_doctors.append(existing)
+            continue  # Skip if already assigned
+        
+        # Verify doctor exists
+        doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+        if not doctor:
+            raise HTTPException(404, f"Doctor with id {doctor_id} not found")
+        
+        # Create assignment
+        appt_doctor = models.AppointmentDoctor(
+            appointment_id=appointment_id,
+            doctor_id=doctor_id
+        )
+        db.add(appt_doctor)
+        assigned_doctors.append(appt_doctor)
+    
     db.commit()
-
-    return {
-        "message": f"Assigned {len(added_doctors)} doctor(s) to appointment",
-        "added_doctors": added_doctors,
-        "total_doctors": len(existing_doctor_ids) + len(added_doctors)
-    }
+    
+    return {"message": f"Successfully assigned {len(assigned_doctors)} doctor(s)", "count": len(assigned_doctors)}
