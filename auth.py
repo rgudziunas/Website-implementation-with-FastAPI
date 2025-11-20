@@ -15,7 +15,7 @@ from database import SessionLocal
 # Configuration
 SECRET_KEY = "Rokas958"  # Change this in production!
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Short-lived access tokens
+ACCESS_TOKEN_EXPIRE_MINUTES = 1  # Short-lived access tokens
 REFRESH_TOKEN_EXPIRE_DAYS = 30    # Long-lived refresh tokens
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
